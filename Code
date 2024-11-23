@@ -1,0 +1,114 @@
+ 
+import cv2 
+import dlib 
+import numpy as np 
+from scipy.spatial import distance as dist 
+from imutils import face_utils 
+import time 
+ 
+def eye_aspect_ratio(eye): 
+A = dist.euclidean(eye[1], eye[5]) 
+B = dist.euclidean(eye[2], eye[4]) 
+C = dist.euclidean(eye[0], eye[3]) 
+ear = (A + B) / (2.0 * C) 
+return ear 
+ 
+# Constants - now easily adjustable 
+EYE_AR_THRESH = 0.3 # Adjust this value between 0.25 and 0.35 
+EYE_AR_CONSEC_FRAMES = 48 # Adjust this value between 30 and 60 
+COUNTER = 0 
+ALARM_ON = False 
+ 
+# Initialize dlib's face detector and facial landmark predictor 
+detector = dlib.get_frontal_face_detector() 
+predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat") 
+ 
+# Get indexes of facial landmarks for the left and right eyes 
+(lStart, lEnd) = face_utils.FACIAL_LANDMARKS_IDXS["left_eye"] 
+(rStart, rEnd) = face_utils.FACIAL_LANDMARKS_IDXS["right_eye"] 
+ 
+# Start the video stream 
+vs = cv2.VideoCapture(0) 
+time.sleep(1.0) 
+ 
+while True: 
+ret, frame = vs.read() 
+if not ret: 
+break
+frame = cv2.flip(frame, 1) 
+gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) 
+ 
+# Detect faces in the grayscale frame 
+rects = detector(gray, 0) 
+ 
+for rect in rects: 
+shape = predictor(gray, rect) 
+shape = face_utils.shape_to_np(shape) 
+ 
+leftEye = shape[lStart:lEnd] 
+rightEye = shape[rStart:rEnd] 
+leftEAR = eye_aspect_ratio(leftEye) 
+rightEAR = eye_aspect_ratio(rightEye) 
+ 
+ear = (leftEAR + rightEAR) / 2.0 
+ 
+leftEyeHull = cv2.convexHull(leftEye) 
+rightEyeHull = cv2.convexHull(rightEye) 
+cv2.drawContours(frame, [leftEyeHull], -1, (0, 255, 0), 1) 
+cv2.drawContours(frame, [rightEyeHull], -1, (0, 255, 0), 1) 
+ 
+if ear < EYE_AR_THRESH: 
+COUNTER += 1 
+if COUNTER >= EYE_AR_CONSEC_FRAMES: 
+if not ALARM_ON: 
+ALARM_ON = True 
+cv2.putText(frame, "DROWSINESS ALERT!", (10, 30), 
+cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2) 
+else: 
+COUNTER = 0 
+ALARM_ON = False 
+ 
+cv2.putText(frame, f"EAR: {ear:.2f}", (300, 30), 
+cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2) 
+ 
+# Determine the state 
+if COUNTER >= EYE_AR_CONSEC_FRAMES: 
+state = "SLEEPING" 
+state_color = (0, 0, 255) # Red for sleeping 
+elif ear < EYE_AR_THRESH: 
+state = "DROWSY" 
+state_color = (0, 165, 255) # Orange for drowsy 
+else: 
+state = "ACTIVE" 
+state_color = (0, 255, 0) # Green for active 
+ 
+cv2.putText(frame, f"State: {state}", (10, 70), 
+cv2.FONT_HERSHEY_SIMPLEX, 0.7, state_color, 2) 
+ 
+# Display current threshold values 
+cv2.putText(frame, f"EAR Thresh: {EYE_AR_THRESH:.2f}", (10, 300), 
+cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1) 
+cv2.putText(frame, f"Consec Frames: {EYE_AR_CONSEC_FRAMES}", (10, 320), 
+cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1) 
+ 
+cv2.imshow("Drowsiness Detection", frame) 
+key = cv2.waitKey(1) & 0xFF 
+ 
+# Adjust EYE_AR_THRESH 
+if key == ord('q'): # Increase threshold 
+EYE_AR_THRESH = min(EYE_AR_THRESH + 0.01, 0.35) 
+elif key == ord('a'): # Decrease threshold 
+EYE_AR_THRESH = max(EYE_AR_THRESH - 0.01, 0.25) 
+ 
+# Adjust EYE_AR_CONSEC_FRAMES 
+elif key == ord('w'): # Increase frames 
+EYE_AR_CONSEC_FRAMES = min(EYE_AR_CONSEC_FRAMES + 1, 60) 
+elif key == ord('s'): # Decrease frames 
+EYE_AR_CONSEC_FRAMES = max(EYE_AR_CONSEC_FRAMES - 1, 30) 
+ 
+# Quit the program 
+elif key == ord('x'): 
+break 
+ 
+vs.release() 
+cv2.destroyAllWindows()
